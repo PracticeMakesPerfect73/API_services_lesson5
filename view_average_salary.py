@@ -21,6 +21,7 @@ def get_vacancies_count_hh():
             "area": MOSCOW_AREA_ID,
         }
         response = requests.get(API_URL_HH, params=params)
+        response.raise_for_status()
         answer = response.json()
         vacancies_count[lang] = answer.get("found", 0)
 
@@ -38,6 +39,7 @@ def get_vacancies_count_sj(api_key):
             "count": 1
         }
         response = requests.get(API_URL_SJ, headers=headers, params=params)
+        response.raise_for_status()
         total_found = response.json().get("total", 0) or 0
         vacancies_count[lang] = total_found
 
@@ -71,6 +73,7 @@ def predict_rub_salary_hh(lang):
         }
 
         response = requests.get(API_URL_HH, params=params)
+        response.raise_for_status()
         answer = response.json()
         vacancies_hh = answer.get("items", [])
         pages = answer.get("pages", 1)
@@ -106,6 +109,7 @@ def predict_rub_salary_sj(lang, api_key):
 
         response = requests.get(API_URL_SJ, headers=headers,
                                 params=params)
+        response.raise_for_status()
         answer = response.json()
         vacancies_sj = answer.get("objects", [])
         pages = answer.get("total", 1) // 100 + 1
