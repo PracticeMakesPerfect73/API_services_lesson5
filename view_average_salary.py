@@ -47,12 +47,14 @@ def get_vacancies_count_sj(api_key):
 
 
 def predict_salary(salary_from, salary_to):
+    salary_increase_factor = 1.2
+    salary_decrease_factor = 0.8
     if salary_from and salary_to:
         return (salary_from + salary_to) / 2
     elif salary_from:
-        return salary_from * 1.2
+        return salary_from * salary_increase_factor
     elif salary_to:
-        return salary_to * 0.8
+        return salary_to * salary_decrease_factor
     return None
 
 
