@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 from environs import Env
 from terminaltables import AsciiTable
 
-API_URL_HH = "https://api.hh.ru/vacancies"
-API_URL_SJ = "https://api.superjob.ru/2.0/vacancies/"
+HH_API_URL = "https://api.hh.ru/vacancies"
+SJ_API_URL = "https://api.superjob.ru/2.0/vacancies/"
 LANGUAGES = [
     "Python", "Java", "JavaScript", "C++", "C#",
     "Go", "Ruby", "PHP", "Shell", "Scala"
@@ -12,55 +12,10 @@ LANGUAGES = [
 MOSCOW_AREA_ID = 1
 
 
-def get_vacancies_count_hh():
-    vacancies_count = {}
-
-    for lang in LANGUAGES:
-        params = {
-            "text": f"программист {lang}",
-            "area": MOSCOW_AREA_ID,
-        }
-        response = requests.get(API_URL_HH, params=params)
-        response.raise_for_status()
-        answer = response.json()
-        vacancies_count[lang] = answer.get("found", 0)
-
-    return vacancies_count
-
-
-def get_vacancies_count_sj(api_key):
-    vacancies_count = {}
-    headers = {"X-Api-App-Id": api_key}
-
-    for lang in LANGUAGES:
-        params = {
-            "keywords": lang,
-            "town": "Москва",
-            "count": 1
-        }
-        response = requests.get(API_URL_SJ, headers=headers, params=params)
-        response.raise_for_status()
-        total_found = response.json().get("total", 0) or 0
-        vacancies_count[lang] = total_found
-
-    return vacancies_count
-
-
-def predict_salary(salary_from, salary_to):
-    salary_increase_factor = 1.2
-    salary_decrease_factor = 0.8
-    if salary_from and salary_to:
-        return (salary_from + salary_to) / 2
-    elif salary_from:
-        return salary_from * salary_increase_factor
-    elif salary_to:
-        return salary_to * salary_decrease_factor
-    return None
-
-
-def predict_rub_salary_hh(lang):
+def get_vacancies_hh(lang):
+    total_vacancies = 0
     date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-    salaries_hh = []
+    salaries = []
     page = 0
     pages = 1
 
@@ -71,16 +26,16 @@ def predict_rub_salary_hh(lang):
             "date_from": date_from,
             "per_page": 100,
             "page": page,
-            "only_with_salary": True
         }
 
-        response = requests.get(API_URL_HH, params=params)
+        response = requests.get(HH_API_URL, params=params)
         response.raise_for_status()
         answer = response.json()
-        vacancies_hh = answer.get("items", [])
+        vacancies = answer.get("items", [])
         pages = answer.get("pages", 1)
+        total_vacancies = answer.get("found", 0)
 
-        for vacancy in vacancies_hh:
+        for vacancy in vacancies:
             salary = vacancy.get("salary")
             if not salary or salary.get("currency") != "RUR":
                 continue
@@ -88,15 +43,16 @@ def predict_rub_salary_hh(lang):
             predicted_salary = predict_salary(salary.get("from"),
                                               salary.get("to"))
             if predicted_salary:
-                salaries_hh.append(predicted_salary)
+                salaries.append(predicted_salary)
 
         page += 1
 
-    return salaries_hh
+    return salaries, total_vacancies
 
 
-def predict_rub_salary_sj(lang, api_key):
-    salaries_sj = []
+def get_vacancies_sj(lang, api_key):
+    total_vacancies = 0
+    salaries = []
     page = 0
     pages = 1
     headers = {"X-Api-App-Id": api_key}
@@ -109,12 +65,13 @@ def predict_rub_salary_sj(lang, api_key):
             "page": page
         }
 
-        response = requests.get(API_URL_SJ, headers=headers,
+        response = requests.get(SJ_API_URL, headers=headers,
                                 params=params)
         response.raise_for_status()
         answer = response.json()
         vacancies_sj = answer.get("objects", [])
         pages = answer.get("total", 1) // 100 + 1
+        total_vacancies = answer.get("total", 0) or 0
 
         for vacancy in vacancies_sj:
             salary_from = vacancy.get("payment_from")
@@ -126,11 +83,23 @@ def predict_rub_salary_sj(lang, api_key):
 
             predicted_salary = predict_salary(salary_from, salary_to)
             if predicted_salary:
-                salaries_sj.append(predicted_salary)
+                salaries.append(predicted_salary)
 
         page += 1
 
-    return salaries_sj
+    return salaries, total_vacancies
+
+
+def predict_salary(salary_from, salary_to):
+    salary_increase_factor = 1.2
+    salary_decrease_factor = 0.8
+    if salary_from and salary_to:
+        return (salary_from + salary_to) / 2
+    elif salary_from:
+        return salary_from * salary_increase_factor
+    elif salary_to:
+        return salary_to * salary_decrease_factor
+    return
 
 
 def get_average_salary(salaries):
@@ -138,39 +107,39 @@ def get_average_salary(salaries):
         return None, 0
 
     average_salary = int(sum(salaries) / len(salaries))
-    return average_salary, len(salaries)
+    return average_salary
 
 
 def collect_statistics_hh():
-    vacancies_count = get_vacancies_count_hh()
-    salary_stats_hh = {}
+    hh_salary_stats = {}
 
     for lang in LANGUAGES:
-        salaries_hh = predict_rub_salary_hh(lang)
-        avg_salary, processed = get_average_salary(salaries_hh)
-        salary_stats_hh[lang] = {
-            "vacancies_found": vacancies_count[lang],
-            "vacancies_processed": processed,
+        hh_salaries, vacancies_found = get_vacancies_hh(lang)
+        avg_salary = get_average_salary(hh_salaries)
+        vacancies_processed = len(hh_salaries)
+        hh_salary_stats[lang] = {
+            "vacancies_found": vacancies_found,
+            "vacancies_processed": vacancies_processed,
             "average_salary": avg_salary
         }
 
-    return salary_stats_hh
+    return hh_salary_stats
 
 
 def collect_statistics_sj(api_key):
-    vacancies_count = get_vacancies_count_sj(api_key)
-    salary_stats_sj = {}
+    sj_salary_stats = {}
 
     for lang in LANGUAGES:
-        salaries_sj = predict_rub_salary_sj(lang, api_key)
-        avg_salary, processed = get_average_salary(salaries_sj)
-        salary_stats_sj[lang] = {
-            "vacancies_found": vacancies_count[lang],
-            "vacancies_processed": processed,
+        sj_salaries, vacancies_found = get_vacancies_sj(lang, api_key)
+        avg_salary = get_average_salary(sj_salaries)
+        vacancies_processed = len(sj_salaries)
+        sj_salary_stats[lang] = {
+            "vacancies_found": vacancies_found,
+            "vacancies_processed": vacancies_processed,
             "average_salary": avg_salary
         }
 
-    return salary_stats_sj
+    return sj_salary_stats
 
 
 def print_table(statistics, source_name):
